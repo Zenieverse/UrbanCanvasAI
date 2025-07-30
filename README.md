@@ -1,4 +1,626 @@
-# UrbanCanvasAI
+# UrbanCanvasAI 
+https://poe.com/UrbanCanvasAI 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Urban Canvas AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap');
+        
+        .map-container {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .map-grid {
+            background-image: 
+                radial-gradient(circle at 20% 20%, rgba(255,255,255,0.1) 1px, transparent 1px),
+                radial-gradient(circle at 80% 80%, rgba(255,255,255,0.1) 1px, transparent 1px);
+            background-size: 50px 50px;
+            animation: float 20s ease-in-out infinite;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-10px) rotate(1deg); }
+        }
+        
+        .memory-pin {
+            position: absolute;
+            animation: pulse 2s infinite;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .memory-pin:hover {
+            transform: scale(1.2);
+            z-index: 10;
+        }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(139, 69, 19, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(139, 69, 19, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(139, 69, 19, 0); }
+        }
+        
+        .heatmap-overlay {
+            background: radial-gradient(circle at var(--x, 50%) var(--y, 50%), 
+                rgba(255, 100, 100, 0.3) 0%, 
+                rgba(255, 150, 50, 0.2) 40%, 
+                transparent 70%);
+            pointer-events: none;
+        }
+        
+        .story-card {
+            backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .dark .story-card {
+            background: rgba(30, 30, 30, 0.95);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .timeline-track {
+            background: linear-gradient(90deg, 
+                #8B4513 0%, 
+                #CD853F 25%, 
+                #DAA520 50%, 
+                #FF6B35 75%, 
+                #5D5CDE 100%);
+        }
+        
+        .ai-generating {
+            animation: shimmer 1.5s infinite;
+        }
+        
+        @keyframes shimmer {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+        
+        .floating-ui {
+            backdrop-filter: blur(20px);
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .dark .floating-ui {
+            background: rgba(30, 30, 30, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .memory-photo {
+            filter: sepia(20%) saturate(80%) brightness(1.1);
+            transition: filter 0.3s ease;
+        }
+        
+        .memory-photo:hover {
+            filter: none;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'serif': ['Playfair Display', 'serif'],
+                        'sans': ['Inter', 'sans-serif']
+                    },
+                    colors: {
+                        primary: '#5D5CDE'
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 font-sans">
+    <!-- Main Container -->
+    <div class="h-screen flex flex-col overflow-hidden">
+        <!-- Header -->
+        <header class="floating-ui border-b border-gray-200 dark:border-gray-700 z-20 relative">
+            <div class="px-4 py-3 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 bg-gradient-to-br from-primary to-purple-600 rounded-lg flex items-center justify-center">
+                        <i class="fas fa-map-marked-alt text-white text-sm"></i>
+                    </div>
+                    <h1 class="font-serif font-bold text-xl text-gray-800 dark:text-white">Urban Canvas AI</h1>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <button id="viewModeBtn" class="px-3 py-1 text-sm bg-primary text-white rounded-full hover:bg-primary/80 transition-colors">
+                        3D View
+                    </button>
+                    <button id="addMemoryBtn" class="px-3 py-1 text-sm bg-gray-800 dark:bg-gray-600 text-white rounded-full hover:bg-gray-700 dark:hover:bg-gray-500 transition-colors">
+                        <i class="fas fa-plus mr-1"></i> Add Memory
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="flex-1 flex overflow-hidden">
+            <!-- Map Area -->
+            <div class="flex-1 relative map-container map-grid">
+                <!-- Heatmap Overlay -->
+                <div id="heatmapOverlay" class="absolute inset-0 heatmap-overlay opacity-60" style="--x: 30%; --y: 40%;"></div>
+                <div class="absolute inset-0 heatmap-overlay opacity-40" style="--x: 70%; --y: 60%;"></div>
+                <div class="absolute inset-0 heatmap-overlay opacity-30" style="--x: 50%; --y: 20%;"></div>
+
+                <!-- Memory Pins -->
+                <div class="memory-pin w-4 h-4 bg-amber-600 rounded-full border-2 border-white shadow-lg" style="top: 30%; left: 25%;" data-memory="saigon-pho"></div>
+                <div class="memory-pin w-4 h-4 bg-red-500 rounded-full border-2 border-white shadow-lg" style="top: 60%; left: 70%;" data-memory="paris-cafe"></div>
+                <div class="memory-pin w-4 h-4 bg-green-600 rounded-full border-2 border-white shadow-lg" style="top: 20%; left: 60%;" data-memory="tokyo-sakura"></div>
+                <div class="memory-pin w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-lg" style="top: 75%; left: 40%;" data-memory="nyc-rooftop"></div>
+                <div class="memory-pin w-4 h-4 bg-purple-500 rounded-full border-2 border-white shadow-lg" style="top: 45%; left: 85%;" data-memory="london-rain"></div>
+
+                <!-- 3D Buildings Simulation -->
+                <div class="absolute top-1/4 left-1/3 w-8 h-12 bg-gray-300 dark:bg-gray-600 transform rotate-12 opacity-40 rounded-sm shadow-lg"></div>
+                <div class="absolute top-1/3 left-1/2 w-6 h-16 bg-gray-400 dark:bg-gray-500 transform -rotate-6 opacity-30 rounded-sm shadow-lg"></div>
+                <div class="absolute bottom-1/3 right-1/4 w-10 h-14 bg-gray-300 dark:bg-gray-600 transform rotate-3 opacity-35 rounded-sm shadow-lg"></div>
+
+                <!-- Floating Controls -->
+                <div class="absolute top-4 right-4 space-y-2">
+                    <button class="floating-ui p-2 rounded-lg shadow-lg hover:bg-white/90 dark:hover:bg-gray-800/90 transition-colors">
+                        <i class="fas fa-search-plus text-gray-600 dark:text-gray-400"></i>
+                    </button>
+                    <button class="floating-ui p-2 rounded-lg shadow-lg hover:bg-white/90 dark:hover:bg-gray-800/90 transition-colors">
+                        <i class="fas fa-cube text-gray-600 dark:text-gray-400"></i>
+                    </button>
+                    <button id="heatmapBtn" class="floating-ui p-2 rounded-lg shadow-lg hover:bg-white/90 dark:hover:bg-gray-800/90 transition-colors">
+                        <i class="fas fa-fire text-gray-600 dark:text-gray-400"></i>
+                    </button>
+                </div>
+
+                <!-- Timeline Control -->
+                <div class="absolute bottom-4 left-4 right-4">
+                    <div class="floating-ui p-4 rounded-lg shadow-lg">
+                        <div class="flex items-center space-x-4">
+                            <span class="text-sm font-medium text-gray-600 dark:text-gray-400">2005</span>
+                            <div class="flex-1 relative">
+                                <div class="timeline-track h-2 rounded-full"></div>
+                                <input type="range" id="timelineSlider" min="2005" max="2025" value="2015" 
+                                       class="absolute inset-0 w-full h-2 bg-transparent appearance-none cursor-pointer">
+                            </div>
+                            <span class="text-sm font-medium text-gray-600 dark:text-gray-400">2025</span>
+                            <span id="currentYear" class="text-sm font-bold text-primary px-2 py-1 bg-primary/10 rounded">2015</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar -->
+            <div id="sidebar" class="w-80 floating-ui border-l border-gray-200 dark:border-gray-700 flex flex-col transform translate-x-full transition-transform duration-300">
+                <div class="p-4 border-b border-gray-200 dark:border-gray-700">
+                    <div class="flex items-center justify-between">
+                        <h2 id="sidebarTitle" class="font-serif font-semibold text-lg text-gray-800 dark:text-white">Memories</h2>
+                        <button id="closeSidebar" class="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                            <i class="fas fa-times text-gray-500"></i>
+                        </button>
+                    </div>
+                </div>
+                <div id="sidebarContent" class="flex-1 overflow-y-auto p-4">
+                    <!-- Dynamic content -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Memory Modal -->
+    <div id="addMemoryModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-serif font-semibold text-xl text-gray-800 dark:text-white">Create Memory</h3>
+                    <button id="closeModal" class="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+                        <i class="fas fa-times text-gray-500"></i>
+                    </button>
+                </div>
+                
+                <form id="memoryForm" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Location</label>
+                        <input type="text" id="memoryLocation" placeholder="e.g., Central Park, New York" 
+                               class="w-full px-3 py-2 text-base border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Year</label>
+                        <input type="number" id="memoryYear" min="2005" max="2025" value="2015" 
+                               class="w-full px-3 py-2 text-base border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Keywords</label>
+                        <input type="text" id="memoryKeywords" placeholder="e.g., rainy evening, first date, street food" 
+                               class="w-full px-3 py-2 text-base border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Photo Description</label>
+                        <textarea id="memoryDescription" rows="3" placeholder="Describe what's in the photo or the scene you remember..." 
+                                  class="w-full px-3 py-2 text-base border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white resize-none"></textarea>
+                    </div>
+                    
+                    <div class="flex space-x-3 pt-4">
+                        <button type="button" id="cancelMemory" class="flex-1 px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                            Cancel
+                        </button>
+                        <button type="submit" id="createMemory" class="flex-1 px-4 py-2 bg-primary text-white hover:bg-primary/80 rounded-lg transition-colors">
+                            <i class="fas fa-magic mr-2"></i>Create with AI
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Dark mode detection
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+        }
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', event => {
+            if (event.matches) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        });
+
+        // Memory data
+        const memories = {
+            'saigon-pho': {
+                title: 'The Perfect Bowl',
+                location: 'Nguyễn Trãi Street, Saigon',
+                year: 2010,
+                story: 'On a rain-slicked evening in 2010, the neon lights of Nguyễn Trãi street blurred into watercolor. Here, at a small, steamy stall, was a bowl of phở so perfect it became a memory, a warm anchor in the heart of a bustling Saigon.',
+                theme: 'Street Food Discoveries',
+                photo: 'https://images.unsplash.com/photo-1555992336-03a23c7b20ee?w=400&h=300&fit=crop'
+            },
+            'paris-cafe': {
+                title: 'Café de l\'Amour',
+                location: 'Montmartre, Paris',
+                year: 2018,
+                story: 'The morning light filtered through the café windows, casting golden shadows on cobblestones worn smooth by centuries of lovers and dreamers. Here, over café au lait and croissants, two hearts found their rhythm.',
+                theme: 'First Dates',
+                photo: 'https://images.unsplash.com/photo-1559496417-e7f25cb247cd?w=400&h=300&fit=crop'
+            },
+            'tokyo-sakura': {
+                title: 'Cherry Blossom Promise',
+                location: 'Shinjuku Park, Tokyo',
+                year: 2012,
+                story: 'Under the pink canopy of sakura petals, time seemed suspended. The gentle breeze carried whispers of spring and promises of new beginnings, as thousands of delicate flowers danced in the morning light.',
+                theme: 'Nature\'s Moments',
+                photo: 'https://images.unsplash.com/photo-1522383225653-ed111181a951?w=400&h=300&fit=crop'
+            },
+            'nyc-rooftop': {
+                title: 'City of Dreams',
+                location: 'Brooklyn Heights, NYC',
+                year: 2016,
+                story: 'From the rooftop, Manhattan stretched endlessly into the twilight. The city hummed with a million stories, each light a window into someone\'s dream, someone\'s struggle, someone\'s triumph.',
+                theme: 'Urban Horizons',
+                photo: 'https://images.unsplash.com/photo-1496588152823-86ff7695e68f?w=400&h=300&fit=crop'
+            },
+            'london-rain': {
+                title: 'Rainy Day Refuge',
+                location: 'Covent Garden, London',
+                year: 2014,
+                story: 'The London rain fell in sheets, turning the garden into a symphony of droplets on glass. Inside the covered market, warmth and laughter echoed off Victorian ironwork, a perfect refuge from the storm.',
+                theme: 'Weather Stories',
+                photo: 'https://images.unsplash.com/photo-1520986606214-8b456906c813?w=400&h=300&fit=crop'
+            }
+        };
+
+        // DOM elements
+        const sidebar = document.getElementById('sidebar');
+        const sidebarTitle = document.getElementById('sidebarTitle');
+        const sidebarContent = document.getElementById('sidebarContent');
+        const closeSidebar = document.getElementById('closeSidebar');
+        const timelineSlider = document.getElementById('timelineSlider');
+        const currentYear = document.getElementById('currentYear');
+        const heatmapBtn = document.getElementById('heatmapBtn');
+        const addMemoryBtn = document.getElementById('addMemoryBtn');
+        const addMemoryModal = document.getElementById('addMemoryModal');
+        const closeModal = document.getElementById('closeModal');
+        const cancelMemory = document.getElementById('cancelMemory');
+        const memoryForm = document.getElementById('memoryForm');
+
+        // Memory pins
+        const memoryPins = document.querySelectorAll('.memory-pin');
+
+        // Timeline functionality
+        timelineSlider.addEventListener('input', (e) => {
+            const year = e.target.value;
+            currentYear.textContent = year;
+            filterMemoriesByYear(year);
+        });
+
+        function filterMemoriesByYear(year) {
+            memoryPins.forEach(pin => {
+                const memoryId = pin.dataset.memory;
+                const memory = memories[memoryId];
+                if (memory && memory.year <= year) {
+                    pin.style.opacity = '1';
+                    pin.style.pointerEvents = 'auto';
+                } else {
+                    pin.style.opacity = '0.3';
+                    pin.style.pointerEvents = 'none';
+                }
+            });
+        }
+
+        // Heatmap toggle
+        let heatmapVisible = true;
+        heatmapBtn.addEventListener('click', () => {
+            const overlays = document.querySelectorAll('.heatmap-overlay');
+            heatmapVisible = !heatmapVisible;
+            overlays.forEach(overlay => {
+                overlay.style.opacity = heatmapVisible ? overlay.style.opacity : '0';
+            });
+            heatmapBtn.style.background = heatmapVisible ? 'rgba(255, 255, 255, 0.9)' : 'rgba(239, 68, 68, 0.1)';
+        });
+
+        // Memory pin clicks
+        memoryPins.forEach(pin => {
+            pin.addEventListener('click', () => {
+                const memoryId = pin.dataset.memory;
+                showMemoryDetails(memoryId);
+            });
+        });
+
+        function showMemoryDetails(memoryId) {
+            const memory = memories[memoryId];
+            if (!memory) return;
+
+            sidebarTitle.textContent = memory.title;
+            sidebarContent.innerHTML = `
+                <div class="space-y-4">
+                    <div class="relative overflow-hidden rounded-lg">
+                        <img src="${memory.photo}" alt="${memory.title}" 
+                             class="w-full h-48 object-cover memory-photo">
+                        <div class="absolute top-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+                            ${memory.year}
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <div class="flex items-center space-x-2 mb-2">
+                            <i class="fas fa-map-marker-alt text-gray-400"></i>
+                            <span class="text-sm text-gray-600 dark:text-gray-400">${memory.location}</span>
+                        </div>
+                        <div class="flex items-center space-x-2 mb-3">
+                            <i class="fas fa-tag text-gray-400"></i>
+                            <span class="text-xs bg-primary bg-opacity-10 text-primary px-2 py-1 rounded-full">${memory.theme}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="prose prose-sm dark:prose-invert">
+                        <p class="text-gray-700 dark:text-gray-300 leading-relaxed font-serif italic">"${memory.story}"</p>
+                    </div>
+                    
+                    <div class="flex space-x-2 pt-4">
+                        <button class="flex-1 px-3 py-2 bg-primary text-white text-sm rounded-lg hover:bg-primary/80 transition-colors">
+                            <i class="fas fa-history mr-1"></i> Then & Now
+                        </button>
+                        <button class="px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 text-sm rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                            <i class="fas fa-share-alt"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            sidebar.classList.remove('translate-x-full');
+        }
+
+        // Close sidebar
+        closeSidebar.addEventListener('click', () => {
+            sidebar.classList.add('translate-x-full');
+        });
+
+        // Add memory modal
+        addMemoryBtn.addEventListener('click', () => {
+            addMemoryModal.classList.remove('hidden');
+        });
+
+        closeModal.addEventListener('click', () => {
+            addMemoryModal.classList.add('hidden');
+        });
+
+        cancelMemory.addEventListener('click', () => {
+            addMemoryModal.classList.add('hidden');
+        });
+
+        // Handle memory creation with AI
+        let isGenerating = false;
+
+        memoryForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (isGenerating) return;
+
+            const location = document.getElementById('memoryLocation').value.trim();
+            const year = document.getElementById('memoryYear').value;
+            const keywords = document.getElementById('memoryKeywords').value.trim();
+            const description = document.getElementById('memoryDescription').value.trim();
+
+            if (!location || !keywords || !description) {
+                showAlert('Please fill in all fields to create your memory.');
+                return;
+            }
+
+            isGenerating = true;
+            const createBtn = document.getElementById('createMemory');
+            const originalText = createBtn.innerHTML;
+            createBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>AI Weaving...';
+            createBtn.disabled = true;
+
+            try {
+                // Register handler for AI response
+                window.Poe.registerHandler('memory-story-handler', (result) => {
+                    if (result.status === 'complete') {
+                        const story = result.responses[0].content;
+                        displayGeneratedMemory(location, year, keywords, description, story);
+                        addMemoryModal.classList.add('hidden');
+                        memoryForm.reset();
+                    } else if (result.status === 'error') {
+                        showAlert('Failed to generate story. Please try again.');
+                    }
+                    
+                    // Reset button state
+                    createBtn.innerHTML = originalText;
+                    createBtn.disabled = false;
+                    isGenerating = false;
+                });
+
+                // Send request to Claude for story generation
+                await window.Poe.sendUserMessage(
+                    `@Claude-Sonnet-4 Create a beautiful, poetic memory narrative for a location-based story. Use these details:
+
+Location: ${location}
+Year: ${year}
+Keywords: ${keywords}
+Scene/Photo Description: ${description}
+
+Write a single, evocative paragraph (2-3 sentences) that captures the emotional essence of this memory. Use rich, sensory language and make it feel nostalgic and meaningful. The style should be similar to these examples:
+
+"On a rain-slicked evening in 2010, the neon lights of Nguyễn Trãi street blurred into watercolor. Here, at a small, steamy stall, was a bowl of phở so perfect it became a memory, a warm anchor in the heart of a bustling Saigon."
+
+"The morning light filtered through the café windows, casting golden shadows on cobblestones worn smooth by centuries of lovers and dreamers. Here, over café au lait and croissants, two hearts found their rhythm."
+
+Respond ONLY with the story paragraph, no explanations or additional text.`,
+                    {
+                        handler: 'memory-story-handler',
+                        stream: false,
+                        openChat: false
+                    }
+                );
+
+            } catch (error) {
+                showAlert('Failed to generate story. Please try again.');
+                createBtn.innerHTML = originalText;
+                createBtn.disabled = false;
+                isGenerating = false;
+            }
+        });
+
+        function displayGeneratedMemory(location, year, keywords, description, story) {
+            // Create a temporary display of the generated memory
+            sidebarTitle.textContent = 'Your New Memory';
+            sidebarContent.innerHTML = `
+                <div class="space-y-4">
+                    <div class="bg-gradient-to-br from-primary/10 to-purple-100 dark:from-primary/20 dark:to-purple-900/20 p-4 rounded-lg border-2 border-dashed border-primary/30">
+                        <div class="text-center mb-3">
+                            <i class="fas fa-magic text-primary text-2xl mb-2"></i>
+                            <p class="text-sm text-gray-600 dark:text-gray-400">AI Generated Memory</p>
+                        </div>
+                        
+                        <div class="space-y-3">
+                            <div>
+                                <div class="flex items-center space-x-2 mb-1">
+                                    <i class="fas fa-map-marker-alt text-gray-400"></i>
+                                    <span class="text-sm text-gray-600 dark:text-gray-400">${location}</span>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <i class="fas fa-calendar text-gray-400"></i>
+                                    <span class="text-sm text-gray-600 dark:text-gray-400">${year}</span>
+                                </div>
+                            </div>
+                            
+                            <div class="prose prose-sm dark:prose-invert">
+                                <p class="text-gray-700 dark:text-gray-300 leading-relaxed font-serif italic">"${story}"</p>
+                            </div>
+                            
+                            <div class="text-xs text-gray-500 dark:text-gray-400">
+                                <strong>Keywords:</strong> ${keywords}
+                            </div>
+                        </div>
+                        
+                        <div class="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                            <div class="flex items-center text-green-700 dark:text-green-400">
+                                <i class="fas fa-check-circle mr-2"></i>
+                                <span class="text-sm">Memory created successfully! It would be saved to the map.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            sidebar.classList.remove('translate-x-full');
+        }
+
+        function showAlert(message) {
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            modal.innerHTML = `
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg max-w-sm w-full mx-4">
+                    <div class="flex items-center mb-4">
+                        <i class="fas fa-exclamation-triangle text-amber-500 mr-3"></i>
+                        <p class="text-gray-700 dark:text-gray-300">${message}</p>
+                    </div>
+                    <div class="flex justify-end">
+                        <button class="px-4 py-2 bg-primary text-white hover:bg-primary/80 rounded transition-colors" onclick="this.closest('.fixed').remove()">OK</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        // Initialize filter
+        filterMemoriesByYear(2015);
+
+        // Show welcome message
+        setTimeout(() => {
+            sidebarTitle.textContent = 'Welcome to Urban Canvas AI';
+            sidebarContent.innerHTML = `
+                <div class="space-y-4 text-center">
+                    <div class="w-16 h-16 bg-gradient-to-br from-primary to-purple-600 rounded-full flex items-center justify-center mx-auto">
+                        <i class="fas fa-globe-americas text-white text-xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-serif font-semibold text-lg text-gray-800 dark:text-white mb-2">Explore 20 Years of Memories</h3>
+                        <p class="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+                            Fly through photorealistic 3D cities and discover stories from around the world. Use the timeline to travel through time, click memory pins to explore stories, and create your own with AI assistance.
+                        </p>
+                    </div>
+                    <div class="space-y-2 text-left">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-3 h-3 bg-amber-600 rounded-full"></div>
+                            <span class="text-xs text-gray-600 dark:text-gray-400">Street Food Discoveries</span>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <div class="w-3 h-3 bg-red-500 rounded-full"></div>
+                            <span class="text-xs text-gray-600 dark:text-gray-400">First Dates</span>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <div class="w-3 h-3 bg-green-600 rounded-full"></div>
+                            <span class="text-xs text-gray-600 dark:text-gray-400">Nature's Moments</span>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <div class="w-3 h-3 bg-blue-500 rounded-full"></div>
+                            <span class="text-xs text-gray-600 dark:text-gray-400">Urban Horizons</span>
+                        </div>
+                    </div>
+                    <button class="w-full px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/80 transition-colors" onclick="this.closest('#sidebar').classList.add('translate-x-full')">
+                        Start Exploring
+                    </button>
+                </div>
+            `;
+            sidebar.classList.remove('translate-x-full');
+        }, 1000);
+    </script>
+</body>
+</html>
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
